@@ -46,7 +46,7 @@ elif [[ -d /work/noaa ]] ; then  ### orion
 ################# STAMPEDE2 for GSI-CAPS branch ####################
 elif [[ "`grep -i "stampede2" /etc/hosts | head -n1`" != "" ]] ; then
    # source /etc/profile.d/modules.sh
-   # modulefile="/my/modulefile.me.GSI_UPP_WRF"
+    modulefile="/work/06809/jpark217/stampede2/GSILIBS/modulefile.jpark217_20200623"
     NCEPLIBS="/work/06809/jpark217/stampede2/20200619/NCEPLIBS/build/install"
     GSILIBS="/work/06809/jpark217/stampede2/GSILIBS/build"
 
@@ -63,11 +63,11 @@ else
     GSILIBS="/my/GSILIBS/b_intel18.0.5_impi2018.4.274/"
 fi
 
-#if [ ! -f $modulefile ]; then
-#    echo "modulefiles $modulefile does not exist"
-#    exit 10
-#fi
-#source $modulefile
+if [ ! -f $modulefile ]; then
+    echo "modulefiles $modulefile does not exist"
+    exit 10
+fi
+source $modulefile
 
 ## if NETCDF4 is set to 0 or 1, unset it
 if [[ "$NETCDF4" == "1" ]] || [[ "$NETCDF4" == "0" ]]; then
