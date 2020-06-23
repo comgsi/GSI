@@ -1,0 +1,165 @@
+#
+#     ##################################################################
+#     ##################################################################
+#     ######                                                      ######
+#     ######      Advanced Regional Prediction System (ARPS)      ######
+#     ######                   Version 5.0                        ######
+#     ######                                                      ######
+#     ######                     Developed by                     ######
+#     ######     Center for Analysis and Prediction of Storms     ######
+#     ######                University of Oklahoma                ######
+#     ######                                                      ######
+#     ##################################################################
+#     ##################################################################
+#
+#=======================================================================
+#
+#  PURPOSE: This makefile generates the radaremul
+#
+#  AUTHOR:  Keith Brewster
+#           12/10/1997
+#
+#  Modification history:
+#           Feb. 2010 (Youngsun Jung)
+#           Copied from arpsenkf directory to radaremul (new directory)
+#
+#  OTHER INFORMATION:
+#       See the makearps command.
+#
+#=======================================================================
+
+#-----------------------------------------------------------------------
+#
+# Default shell
+#
+#-----------------------------------------------------------------------
+
+# SHELL=/bin/csh
+
+#-----------------------------------------------------------------------
+#
+# Default names of the loader and tar, can be replaced on the command
+# line for other system
+#
+#-----------------------------------------------------------------------
+
+include conf/configure
+
+FTN = ${FC}
+FTNMP = ${DM_FC}
+
+TAR = tar
+AWK = awk
+RM  = rm
+LN  = ln
+
+TOPDIR  = $(COREDIR)
+BINDIR  = $(TOPDIR)/bin
+INCLDIR = $(TOPDIR)/include
+LIBDIR  = $(TOPDIR)/lib
+MODDIR  = $(TOPDIR)/include
+
+#-----------------------------------------------------------------------
+#
+# Compiler Flag of Options. The default is for AIX Fortran xlf.
+#
+#-----------------------------------------------------------------------
+
+#FFLAGS =
+#CFLAGS =
+#LDFLAGS =
+
+#FIXFLAGS  =
+#FREEFLAGS =
+
+#LIBS =
+
+#-----------------------------------------------------------------------
+#
+# Dependencies
+#
+#.F.o:
+#	-@$(RM) -f $*.f90
+#	$(CPP) $(CPPFLAGS) $*.F > $*.f90
+#	$(FTNMP) $(FFLAGS) $(FREEFLAGS) -c $*.f90
+#-----------------------------------------------------------------------
+
+.SUFFIXES: $(SUFFIXES) .f90
+
+.f.o:
+	$(FTN) $(FFLAGS) $(FIXFLAGS) -c $<
+.f90.o:
+	$(FTN) $(FFLAGS) $(FREEFLAGS) -c $<
+.F.o:
+	$(CPP) $(CPPFLAGS) $< $(addsuffix .f90, $(basename $<));
+	$(FTN) $(FFLAGS) $(FREEFLAGS) -c $(addsuffix .f90, $(basename $<))
+.c.o:
+	$(CC)  $(CFLAGS) -c $<
+.mod.o:        # .mod --> .o dependency dropped
+	
+#-----------------------------------------------------------------------
+#
+# Object library to be generated for ARPS solver:
+#
+# PRDLIB  = prdlib      PRD shared library
+#
+#-----------------------------------------------------------------------
+
+PRDLIB = libradaremul
+
+#-----------------------------------------------------------------------
+#
+# List of object codes
+#
+#-----------------------------------------------------------------------
+
+PRDLIBOBJS = interface.o dualpara.o global_module.o convert2radar.o # radarlib3d.o
+
+MODOBJS = $(MODDIR)/dualpara.mod $(MODDIR)/rsa_table.mod \
+          $(MODDIR)/global_paraest.mod $(MODDIR)/mod_reflec_ferrier.mod \
+		  $(MODDIR)/globcst.mod $(MODDIR)/scatt_table.mod
+
+#-----------------------------------------------------------------------
+#
+# Set Default
+#
+#-----------------------------------------------------------------------
+
+#-----------------------------------------------------------------------
+#
+# Make PRD shared library
+#
+#-----------------------------------------------------------------------
+
+$(PRDLIB): $(PRDLIBOBJS)
+	$(RM) -f $(LIBDIR)/$@.a
+	$(AR) $(ARFLAG) rc $(LIBDIR)/$@.a $(PRDLIBOBJS)
+
+#-----------------------------------------------------------------------
+#
+# Remove the object code for individual programs
+#
+#-----------------------------------------------------------------------
+clean: clean.prdlib
+
+clean.prdlib:
+	-$(RM) -f $(PRDLIBOBJS) $(MODOBJS) $(LIBDIR)/$(PRDLIB).a 
+
+
+#-----------------------------------------------------------------------
+#
+# Object code dependency list:
+#
+#-----------------------------------------------------------------------
+
+convert2radar.o  : convert2radar.f90   dualpara.o            \
+                   global_module.o 
+
+dualpara.o: dualpara.f90 global_module.o
+	$(FTN) $(FFLAGS) $(FREEFLAGS) -c dualpara.f90
+
+global_module.o: global_module.f90
+	$(FTN) $(FFLAGS) $(FREEFLAGS) -c global_module.f90
+
+interface.o: interface.f90 global_module.o dualpara.o
+	$(FTN) $(FFLAGS) $(FREEFLAGS) -c interface.f90

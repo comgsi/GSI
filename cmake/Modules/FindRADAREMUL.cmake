@@ -30,7 +30,7 @@ if( NOT RADAREMUL_LIBRARY ) # didn't find the library, so build it from source
     endif()
     set( radaremul "radaremul")
     set( BUILD_RADAREMUL "ON" CACHE INTERNAL "Build radaremul library" )
-    add_subdirectory(${CMAKE_SOURCE_DIR}/libsrc/radaremul)
+    #add_subdirectory(${CMAKE_SOURCE_DIR}/src/caps/radaremul)
     set( RADAREMUL_LIBRARY ${radaremul} )
     if( CORE_BUILT )
       list( APPEND CORE_BUILT ${RADAREMUL_LIBRARY} )
