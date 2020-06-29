@@ -19,6 +19,9 @@ if [[ "`grep -i "hera" /etc/hosts | head -n1`" != "" ]] ; then
     modulefile="/home/rtrr/PARM_EXEC/modulefiles/modulefile.hera.GSI_UPP_WRF"
     NCEPLIBS="/scratch1/BMC/comgsi/precompiled/NCEPLIBS/b_intel18.0.5.274_impi2018.0.4/install"
     GSILIBS="/scratch1/BMC/comgsi/precompiled/GSILIBS/b_intel18.0.5.274_impi2018.0.4"
+    export G2_LIB4="/scratch2/BMC/wrfruc/gge/codes/WPS/WPS.tanya/ungrib/src/ngl/g2/libg2_4.a"
+    export G2TMPL_LIB="/scratch2/BMC/wrfruc/gge/codes/UPP/GSD_UPP_17oct2019/comupp/lib/libg2tmpl.a"
+    export GRIB2INC="/scratch2/BMC/wrfruc/gge/codes/UPP/GSD_UPP_17oct2019/comupp/include"
 
 ################# Jet ####################
 elif [[ -d /jetmon ]] ; then
@@ -26,6 +29,9 @@ elif [[ -d /jetmon ]] ; then
     modulefile="/home/rtrr/PARM_EXEC/modulefiles/modulefile.jet.GSI_UPP_WRF"
     NCEPLIBS="/lfs4/BMC/wrfruc/gge/precompiled/NCEPLIBS/b_intel18.0.5.274_impi2018.4.274/install"
     GSILIBS="/lfs4/BMC/wrfruc/gge/precompiled/GSILIBS/b_intel18.0.5.274_impi2018.4.274"
+    export G2_LIB4="/lfs4/BMC/wrfruc/gge/precompiled/WPSV3.9/ungrib/src/ngl/g2/libg2_4.a"
+    export G2TMPL_LIB="/lfs4/BMC/wrfruc/gge/precompiled/comupp/lib/libg2tmpl.a"
+    export GRIB2INC="/lfs4/BMC/wrfruc/gge/precompiled/comupp/include"
 
 ################# Cheyenne ####################
 elif [[ -d /glade ]] ; then
@@ -49,7 +55,11 @@ elif [[ "`grep -i "stampede2" /etc/hosts | head -n1`" != "" ]] ; then
     modulefile="/work/06809/jpark217/stampede2/GSILIBS/modulefile.jpark217_20200623"
     NCEPLIBS="/work/06809/jpark217/stampede2/20200619/NCEPLIBS/build/install"
     GSILIBS="/work/06809/jpark217/stampede2/GSILIBS/build"
-
+   # temporarily set G2_LIB4, G2TMPL_LIB, GRIB2INC
+    export GRIB2PATH="/home1/00485/tg457481/local/nwprod2/lib"
+    export G2_LIB4="${GRIB2PATH}/g2/v2.5.0/lib/libg2_4.a"
+    export G2TMPL_LIB="${GRIB2PATH}/g2tmpl/v1.3.0/lib/libg2tmpl.a"
+    export GRIB2INC="${GRIB2PATH}/g2/v2.5.0/incmod/g2_4"
 ################# Generic ####################
 else
     echo -e "\nunknown machine"
