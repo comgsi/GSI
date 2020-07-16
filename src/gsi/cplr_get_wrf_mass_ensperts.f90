@@ -2771,7 +2771,7 @@ end subroutine write_spread_dualres_qcld_regional
    use gsi_bundlemod, only: gsi_bundledestroy
    use gsi_bundlemod, only: gsi_gridcreate
    use guess_grids,   only: ntguessig
-   use caps_radaruse_mod, only: l_use_log_qx, l_use_log_nt, cld_nt_updt
+   use caps_radaruse_mod, only: l_use_log_qx, l_use_log_qx_pval, l_use_dbz_caps, l_use_log_nt, cld_nt_updt
    use caps_radaruse_mod, only: l_cvpnr, cvpnr_pval
 
    implicit none
@@ -2802,6 +2802,29 @@ end subroutine write_spread_dualres_qcld_regional
    character(255) filelists(2)
    character(255) dynmfile
    character(255) tracfile
+
+! --- CAPS --->
+     !add by chenll
+   integer,parameter   :: USEZG = 1
+   real(r_kind),dimension(grd_ens%lat2,grd_ens%lon2,grd_ens%nsig,n_ens):: qr_4d_tmp,qs_4d_tmp,qg_4d_tmp
+
+   if ( l_use_dbz_caps ) then ! JP: Set flag to run this for CAPS only
+      do n=1,n_ens,1
+         do k=1,grd_ens%nsig
+            do i=1,grd_ens%lon2
+               do j=1,grd_ens%lat2
+                  qr_4d_tmp(j,i,k,n)=zero
+                  qs_4d_tmp(j,i,k,n)=zero
+                  qg_4d_tmp(j,i,k,n)=zero
+               end do
+            end do
+         end do
+      end do
+   end if
+! <--- CAPS ----
+
+
+
 
    call gsi_gridcreate(grid_ens,grd_ens%lat2,grd_ens%lon2,grd_ens%nsig)
    call gsi_bundlecreate(en_bar,grid_ens,'ensemble',istatus,names2d=cvars2d,names3d=cvars3d,bundle_kind=r_kind)
@@ -2944,10 +2967,15 @@ end subroutine write_spread_dualres_qcld_regional
                            do j=1,grd_ens%lat2
                               if (l_use_log_qx) then
                                   if(mype==0 .and. i==10 .and. j==10 .and. k==10) write(6,*)'log transform for qr : from member-->',n
-                                  if (qr(j,i,k) <= 5.0E-5_r_kind) then
-                                      qr(j,i,k) = 5.0E-5_r_kind
+                                  if (qr(j,i,k) <= 1.0E-5_r_kind) then !Originally Gang used 5.0E-5
+                                      qr(j,i,k) = 1.0E-5_r_kind         !Rong Kong
                                   end if
-                                  qr(j,i,k) = log(qr(j,i,k))
+                                  if (l_use_log_qx_pval .gt. 0.0_r_kind ) then ! CVpq
+                                     qr(j,i,k) =((qr(j,i,k)**l_use_log_qx_pval)-1)/l_use_log_qx_pval  !chenll
+                                     qr_4d_tmp(j,i,k,n)=qr(j,i,k) !chenll
+                                  else  ! CVlogq
+                                     qr(j,i,k) = log(qr(j,i,k))
+                                  end if
                               end if
                               w3(j,i,k) = qr(j,i,k)
                               x3(j,i,k)=x3(j,i,k)+qr(j,i,k)
@@ -2962,10 +2990,15 @@ end subroutine write_spread_dualres_qcld_regional
                            do j=1,grd_ens%lat2
                               if (l_use_log_qx) then
                                   if(mype==0 .and. i==10 .and. j==10 .and. k==10) write(6,*)'log transform for qs : from member-->',n
-                                  if (qs(j,i,k) <= 5.0E-5_r_kind) then
-                                      qs(j,i,k) = 5.0E-5_r_kind
+                                  if (qs(j,i,k) <= 1.0E-5_r_kind) then 
+                                      qs(j,i,k) = 1.0E-5_r_kind 
                                   end if
-                                  qs(j,i,k) = log(qs(j,i,k))
+                                  if (l_use_log_qx_pval .gt. 0.0_r_kind ) then ! CVpq
+                                     qs(j,i,k)=((qs(j,i,k)**l_use_log_qx_pval)-1)/l_use_log_qx_pval !chenll
+                                     qs_4d_tmp(j,i,k,n)=qs(j,i,k) !chenll
+                                  else  ! CVlogq
+                                     qs(j,i,k) = log(qs(j,i,k))
+                                  end if
                               end if
                               w3(j,i,k) = qs(j,i,k)
                               x3(j,i,k)=x3(j,i,k)+qs(j,i,k)
@@ -2980,10 +3013,15 @@ end subroutine write_spread_dualres_qcld_regional
                            do j=1,grd_ens%lat2
                               if (l_use_log_qx) then
                                   if(mype==0 .and. i==10 .and. j==10 .and. k==10) write(6,*)'log transform for qg : from member-->',n
-                                  if (qg(j,i,k) <= 5.0E-5_r_kind) then
-                                      qg(j,i,k) = 5.0E-5_r_kind
+                                  if (qg(j,i,k) <= 1.0E-5_r_kind) then
+                                     qg(j,i,k) = 1.0E-5_r_kind
                                   end if
-                                  qg(j,i,k) = log(qg(j,i,k))
+                                  if (l_use_log_qx_pval .gt. 0.0_r_kind ) then ! CVpq
+                                     qg(j,i,k)=((qg(j,i,k)**l_use_log_qx_pval)-1)/l_use_log_qx_pval !chenll
+                                     qg_4d_tmp(j,i,k,n)=qg(j,i,k) !chenll
+                                  else  ! CVlogq
+                                     qg(j,i,k) = log(qg(j,i,k))
+                                  end if
                               end if
                               w3(j,i,k) = qg(j,i,k)
                               x3(j,i,k)=x3(j,i,k)+qg(j,i,k)
@@ -3074,6 +3112,9 @@ end subroutine write_spread_dualres_qcld_regional
       enddo ! n ensemble mem loop
   !
 
+!     if ( 1 == 0) then  ! CAPS
+!     call calc_num_rms_caps(qr_4d_tmp,qs_4d_tmp,qg_4d_tmp,l_use_log_qx_pval)
+!     end if
 
   ! CALCULATE ENSEMBLE MEAN
       bar_norm = one/float(n_ens)

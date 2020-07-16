@@ -198,7 +198,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
   use m_dtime, only: dtime_setup, dtime_check
   use obsmod, only   : if_model_dbz, inflate_obserr
   use setupdbz_lib, only:hx_dart,jqr_dart,jqs_dart,jqg_dart 
-  use gridmod, only: wrf_mass_regional,nems_nmmb_regional 
+  use gridmod, only: wrf_mass_regional,nems_nmmb_regional, fv3_regional
   use sparsearr, only: sparr2, new, size, writearray, fullarray
   use state_vectors, only: nsdim
  ! --- CAPS ---
@@ -1814,7 +1814,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
         my_head%pg      = cvar_pg(ikx)
         my_head%jqr     = jqr
 
-        if ( wrf_mass_regional ) then
+        if ( wrf_mass_regional .or. fv3_regional) then
           my_head%jqs     = jqs
           my_head%jqg     = jqg
         end if
@@ -1961,7 +1961,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
   use radaremul_cst, only: mphyopt ! CAPS
   use caps_radaruse_mod, only: l_use_dbz_caps
   use obsmod, only: if_model_dbz
-  use gridmod, only: wrf_mass_regional, nems_nmmb_regional
+  use gridmod, only: wrf_mass_regional, nems_nmmb_regional, fv3_regional
 
   logical,intent(inout) :: proceed
   integer(i_kind) ivar, istatus
@@ -1980,7 +1980,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
       call gsi_metguess_get ('var::dbz', ivar, istatus )
       proceed=proceed.and.ivar>0
   end if
-  if(wrf_mass_regional)then
+  if(wrf_mass_regional .or. fv3_regional )then
      call gsi_metguess_get ('var::qs', ivar, istatus )
      proceed=proceed.and.ivar>0
      call gsi_metguess_get ('var::qg', ivar, istatus )
@@ -2005,7 +2005,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
   use radaremul_cst, only: mphyopt ! CAPS
   use caps_radaruse_mod, only: l_use_dbz_caps
   use obsmod, only: if_model_dbz
-  use gridmod, only: wrf_mass_regional, nems_nmmb_regional
+  use gridmod, only: wrf_mass_regional, nems_nmmb_regional, fv3_regional
 
   real(r_kind),dimension(:,:  ),pointer:: rank2
   real(r_kind),dimension(:,:,:),pointer:: rank3
@@ -2091,7 +2091,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
          call stop2(999)
      endif
 
-     if(wrf_mass_regional)then
+     if(wrf_mass_regional .or. fv3_regional )then
 !    get qs ...
      varname='qs'
      call gsi_bundlegetpointer(gsi_metguess_bundle(1),trim(varname),rank3,istatus)
