@@ -95,7 +95,7 @@ MODULE caps_radaruse_mod
                                          ! 0: not analyzed ; 1: analyzed
 
   logical   :: l_cvpnr                   ! power tranform for qnr
-  real      :: cvpnr_pval                ! power value for qnr
+  real(r_kind) :: cvpnr_pval             ! power value for qnr
 
 ! options for correction of azimuth and tilt angles of radar observations (used in read_radar.f90)
   logical   :: l_correct_azmu

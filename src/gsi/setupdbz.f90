@@ -1374,7 +1374,15 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
                       print*, 'qscalar(P_NR)',qscalar(P_NR)
                    endif
 
-                   jqnr_num = (-720*RHO**2_r_kind*qrexp**2_r_kind/(pi**2_r_kind*rhor**2_r_kind*qscalar(P_NR)**2_r_kind))*ten**12_r_kind*ten**6_r_kind
+                   !jqnr_num = (-720*RHO**2_r_kind*qrexp**2_r_kind/(pi**2_r_kind*rhor**2_r_kind*qscalar(P_NR)**2_r_kind))*ten**12_r_kind*ten**6_r_kind
+                   if (l_cvpnr) then
+                     jqnr_num = (-720*RHO**2_r_kind*qrexp**2_r_kind/(pi**2_r_kind*rhor**2_r_kind*qscalar(P_NR)**(1_r_kind+cvpnr_pval)))*ten**12_r_kind*ten**6_r_kind !lhq 20200806
+                   else
+                     jqnr_num =(-720*RHO**2_r_kind*qrexp**2_r_kind/(pi**2_r_kind*rhor**2_r_kind*qscalar(P_NR)**2_r_kind))*ten**12_r_kind*ten**6_r_kind
+                   end if
+
+
+
                 else
                    jqr_num = 10E-8
                    jqnr_num = 10E-8
