@@ -74,6 +74,7 @@ contains
   !   2017-03-23  Hu     - add code to read hybrid vertical coodinate in WRF MASS
   !                          core
   !
+  !
   !   input argument list:
   !     mype     - pe number
   !
@@ -1324,6 +1325,32 @@ contains
   !   2016-02-14 Johnson, Y. Wang, X. Wang  - add code to read vertical velocity (W) and
   !                                           Reflectivity (REFL_10CM) for radar
   !                                           DA, POC: xuguang.wang@ou.edu
+  !   2016-09    CAPS(G. Zhao) - add checking and print-out for hydrometers reading-in
+  !                            - convert hydrometers variables(qr,qs and qg) to log variables
+  !                            - checking up for zero value of qr/qs/qg and reset to a tiny value
+  !                              since reflectivity algorithm requires non-zero
+  !                              hydrometer mixing ratio.
+  !   2017-03    CAPS(G. Zhao) - tuning different tiny non-zero values assigned to qr/qs/qg
+  !                              and considering the temperature effect on rain, snow and graupel
+  !                              if T > 274.15
+  !                                  qr_min=2.9E-6
+  !                                  qs_min=0.0E-6
+  !                                  qg_min=3.1E-7
+  !                              if T < 274.15  and  T > 272.15
+  !                                  qr_min=2.0E-6
+  !                                  qs_min=1.3E-7
+  !                                  qg_min=3.1E-7
+  !                              if T < 272.15
+  !                                  qr_min=0.0E-6
+  !                                  qs_min=6.3E-6
+  !                                  qg_min=3.1E-7
+  !   2018-02-xx CAPS(G. Zhao) - only reset the value for log transformed qx
+  !                              for regular qx, the non-zero tiny value is applied to
+  !                              qx on obs point in setupdbz
+  !   2020-09-13 CAPS(C. Liu, L. Chen, and H. Li) 
+  !                            - add code for hydrometer variables needed for
+  !                            direct reflectivity DA
+  !                            - add CV transform option on hydrometer variables
   !
   !   input argument list:
   !     mype     - pe number
@@ -1369,6 +1396,9 @@ contains
     use wrf_vars_mod, only : w_exist, dbz_exist
     use setupdbz_lib,only: hx_dart
     use obsmod,only: if_model_dbz
+    use directDA_radaruse_mod, only: l_use_cvpqx, l_use_cvpqx_pval, l_use_dbz_directDA
+    use directDA_radaruse_mod, only: l_cvpnr, cvpnr_pval                                          
+
     implicit none
     class(read_wrf_mass_guess_class),intent(inout) :: this
   
@@ -1418,7 +1448,11 @@ contains
                        indx_seas1, indx_seas2, indx_seas3, indx_seas4,indx_p25
     character(len=5),allocatable :: cvar(:)
     real(r_kind)   :: ges_rho, tsn
-  
+
+  ! Logarithmic q option related variables
+    real(r_kind) :: qr_min, qs_min, qg_min
+    real(r_kind) :: qr_thrshd, qs_thrshd, qg_thrshd
+
     real(r_kind), pointer :: ges_ps_it (:,:  )=>NULL()
     real(r_kind), pointer :: ges_th2_it(:,:  )=>NULL()
     real(r_kind), pointer :: ges_q2_it (:,:  )=>NULL()
@@ -1489,8 +1523,10 @@ contains
           call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qs', ges_qs, istatus );ier=ier+istatus
           call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qg', ges_qg, istatus );ier=ier+istatus
           call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnr',ges_qnr,istatus );ier=ier+istatus
-          call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qni',ges_qni,istatus );ier=ier+istatus
-          call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnc',ges_qnc,istatus );ier=ier+istatus
+          if ( .not.l_use_dbz_directDA) then
+             call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qni',ges_qni,istatus );ier=ier+istatus
+             call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnc',ges_qnc,istatus );ier=ier+istatus
+          end if
           if (ier/=0) n_actual_clouds=0
        end if
        if( dbz_exist )then
@@ -1511,7 +1547,11 @@ contains
        num_mass_fields_base=14+4*lm
        num_mass_fields=num_mass_fields_base
 !    The 9 3D cloud analysis fields are: ql,qi,qr,qs,qg,qnr,qni,qnc,tt
-       if(l_hydrometeor_bkio .and.n_actual_clouds>0) num_mass_fields=num_mass_fields+9*lm+2
+       if ( l_use_dbz_directDA ) then ! direct reflectivity DA does not use qni and qnc
+          if(l_hydrometeor_bkio .and. n_actual_clouds>0) num_mass_fields=num_mass_fields+7*lm+2
+       else
+          if(l_hydrometeor_bkio .and.n_actual_clouds>0) num_mass_fields=num_mass_fields+9*lm+2
+       end if
        if(l_gsd_soilTQ_nudge) num_mass_fields=num_mass_fields+2*(nsig_soil-1)+1
        if(i_use_2mt4b > 0 ) num_mass_fields=num_mass_fields + 2
        if(i_use_2mq4b > 0 .and. i_use_2mt4b <=0 ) num_mass_fields=num_mass_fields + 1
@@ -1733,18 +1773,20 @@ contains
              write(identity(i),'("record ",i3,"--qnr(",i2,")")')i,k
              jsig_skip(i)=0 ; igtype(i)=1
           end do
-          i_qni=i+1
-          do k=1,lm
-             i=i+1                                                    !  qni(k)
-             write(identity(i),'("record ",i3,"--qni(",i2,")")')i,k
-             jsig_skip(i)=0 ; igtype(i)=1
-          end do
-          i_qnc=i+1
-          do k=1,lm
-             i=i+1                                                    !  qnc(k)
-             write(identity(i),'("record ",i3,"--qnc(",i2,")")')i,k
-             jsig_skip(i)=0 ; igtype(i)=1
-          end do
+          if ( .not. l_use_dbz_directDA) then ! direct reflectivity DA does not use qni and qnc
+             i_qni=i+1
+             do k=1,lm
+                i=i+1                                                    ! qni(k)
+                write(identity(i),'("record ",i3,"--qni(",i2,")")')i,k
+                jsig_skip(i)=0 ; igtype(i)=1
+             end do
+             i_qnc=i+1
+             do k=1,lm
+                i=i+1                                                    ! qnc(k)
+                write(identity(i),'("record ",i3,"--qnc(",i2,")")')i,k
+                jsig_skip(i)=0 ; igtype(i)=1
+             end do
+          end if
           if( dbz_exist.and.if_model_dbz )then
             i_dbz=i+1
             do k=1,lm
@@ -1912,16 +1954,20 @@ contains
              call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qs', ges_qs, istatus );ier=ier+istatus
              call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qg', ges_qg, istatus );ier=ier+istatus
              call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnr',ges_qnr,istatus );ier=ier+istatus
-             call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qni',ges_qni,istatus );ier=ier+istatus
-             call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnc',ges_qnc,istatus );ier=ier+istatus
+             if ( .not.l_use_dbz_directDA ) then ! direct reflectivity DA  does not use qni and qnc
+                call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qni',ges_qni,istatus );ier=ier+istatus
+                call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnc',ges_qnc,istatus );ier=ier+istatus
+             end if
              kqc=i_0+i_qc-1
              kqr=i_0+i_qr-1
              kqs=i_0+i_qs-1
              kqi=i_0+i_qi-1
              kqg=i_0+i_qg-1
              kqnr=i_0+i_qnr-1
-             kqni=i_0+i_qni-1
-             kqnc=i_0+i_qnc-1
+             if ( .not.l_use_dbz_directDA ) then ! direct reflectivity DA does not use qni and qnc
+                kqni=i_0+i_qni-1
+                kqnc=i_0+i_qnc-1
+             end if
              ktt=i_0+i_tt-1
           endif
           if( dbz_exist ) then
@@ -2041,8 +2087,10 @@ contains
                 kqi=kqi+1
                 kqg=kqg+1
                 kqnr=kqnr+1
-                kqni=kqni+1
-                kqnc=kqnc+1
+                if ( .not.l_use_dbz_directDA ) then ! direct reflectivity DA does not use qni and qnc
+                   kqni=kqni+1
+                   kqnc=kqnc+1
+                end if
                 ktt=ktt+1
              endif
              if(dbz_exist.and.if_model_dbz) kdbz=kdbz+1
@@ -2081,13 +2129,22 @@ contains
                       ges_qs(j,i,k) = real(all_loc(j,i,kqs),r_kind)
                       ges_qg(j,i,k) = real(all_loc(j,i,kqg),r_kind)
                       ges_qnr(j,i,k)= real(all_loc(j,i,kqnr),r_kind)
-                      ges_qni(j,i,k)= real(all_loc(j,i,kqni),r_kind)
-                      ges_qnc(j,i,k)= real(all_loc(j,i,kqnc),r_kind)
+                      if ( .not.l_use_dbz_directDA ) then ! direct reflectivity DA does not use qni and qnc
+                         ges_qni(j,i,k)= real(all_loc(j,i,kqni),r_kind)
+                         ges_qnc(j,i,k)= real(all_loc(j,i,kqnc),r_kind)
+                      end if
+
+!                     Power transform to QNRAIN
+                      if (l_cvpnr) then
+                        ges_qnr(j,i,k)=((max(ges_qnr(j,i,k),1.0E-2_r_kind)**cvpnr_pval)-1)/cvpnr_pval
+                      endif
+
   !                    ges_tten(j,i,k,it) = real(all_loc(j,i,ktt),r_kind)
                       ges_tten(j,i,k,it) = -20.0_r_single
                       if(k==nsig) ges_tten(j,i,k,it) = -10.0_r_single
-  
+
                    endif
+
                    if(dbz_exist.and.if_model_dbz) ges_dbz(j,i,k) = real(all_loc(j,i,kdbz),r_kind)
                    if ( laeroana_gocart ) then
                       if (indx_sulf>0)  ges_sulf(j,i,k)  = real(all_loc(j,i,kchem(indx_sulf)),r_kind)
@@ -2240,6 +2297,74 @@ contains
                      tsn=ges_tv_it(j,i,k)/(one+fv*max(zero,ges_q_it(j,i,k)))
                      call hx_dart(ges_qr(j,i,k),ges_qg(j,i,k),ges_qs(j,i,k),ges_rho,tsn,ges_dbz(j,i,k),.false.)
                    end if
+
+! --- direct reflectivity DA --- CV transform on hydrometeors / CVq, CVlogq, and CVpq
+! Power transform for related q variables begins here==============================================! g.zhao
+!                  hydrometeors (reset zero cloud variables to tiny but ~0dbz)
+                  if(l_hydrometeor_bkio .and. n_actual_clouds>0) then
+                    ! =====================================================================!
+                     if (l_use_cvpqx) then
+                         if ( l_use_cvpqx_pval .eq. 0. ) then ! CVlogq
+                            if (ges_tsen(j,i,k,it) .gt. 274.15) then ! temperature dependent minimums
+                               qr_min=2.9E-6_r_kind
+                               qr_thrshd=qr_min * one_tenth
+                               qs_min=0.1E-9_r_kind
+                               qs_thrshd=qs_min
+                               qg_min=3.1E-7_r_kind
+                               qg_thrshd=qg_min * one_tenth
+                            else if (ges_tsen(j,i,k,it) .le. 274.15 .and. ges_tsen(j,i,k,it) .ge. 272.15) then
+                               qr_min=2.0E-6_r_kind
+                               qr_thrshd=qr_min * one_tenth
+                               qs_min=1.3E-7_r_kind
+                               qs_thrshd=qs_min * one_tenth
+                               qg_min=3.1E-7_r_kind
+                               qg_thrshd=qg_min * one_tenth
+                            else if (ges_tsen(j,i,k,it) .lt. 272.15) then
+                               qr_min=0.1E-9_r_kind
+                               qr_thrshd=qr_min
+                               qs_min=6.3E-6_r_kind
+                               qs_thrshd=qs_min * one_tenth
+                               qg_min=3.1E-7_r_kind
+                               qg_thrshd=qg_min * one_tenth
+                            end if
+                            if ( ges_qr(j,i,k) .le. qr_thrshd )  ges_qr(j,i,k) = qr_min
+                            if ( ges_qs(j,i,k) .le. qs_thrshd )  ges_qs(j,i,k) = qs_min
+                            if ( ges_qg(j,i,k) .le. qg_thrshd )  ges_qg(j,i,k) = qg_min
+
+!                           Logarithmic conversion of cloud hydrometer variables (qr,qs and qg)
+                            if(mype==0 .AND. i==3 .AND. j==3 .AND. k==3)then
+                                write(6,*)'read_wrf_mass_guess_netcdf: convert qr/qs/qg with log transform.'
+                            end if
+                            ges_qr(j,i,k) = log(ges_qr(j,i,k))
+                            ges_qs(j,i,k) = log(ges_qs(j,i,k))
+                            ges_qg(j,i,k) = log(ges_qg(j,i,k))
+                         else if ( l_use_cvpqx_pval .gt. 0. ) then   ! CVpq
+!                           convert cloud hydrometer variables (qr,qs and qg) to log
+                            if(mype==0 .AND. i==3 .AND. j==3 .AND. k==3)then
+                                write(6,*)'read_wrf_mass_guess_netcdf: convert qr/qs/qg with power transform.'
+                            end if
+                            !RONG KONG modified below to tranform the ges_qr in
+                            !logq space (Gang's version) to q space (arps version)
+                            !so that we don't need to make change to the origial background field....
+                            ges_qr(j,i,k)=((max(ges_qr(j,i,k),1.0E-6_r_kind))**l_use_cvpqx_pval-1)/l_use_cvpqx_pval
+                            ges_qs(j,i,k)=((max(ges_qs(j,i,k),1.0E-6_r_kind))**l_use_cvpqx_pval-1)/l_use_cvpqx_pval
+                            ges_qg(j,i,k)=((max(ges_qg(j,i,k),1.0E-6_r_kind))**l_use_cvpqx_pval-1)/l_use_cvpqx_pval
+                         end if
+                     else   ! CVq
+                         qr_min=zero
+                         qs_min=zero
+                         qg_min=zero
+                         if (mype==0 .AND. i==3 .AND. j==3 .AND. k==3) then
+                             write(6,*)'read_wrf_mass_guess: only reset qr/qs/qg) to 0.0 for negative analysis value. (regular qx)'
+                         end if
+                         ges_qr(j,i,k) = max(ges_qr(j,i,k), qr_min)
+                         ges_qs(j,i,k) = max(ges_qs(j,i,k), qs_min)
+                         ges_qg(j,i,k) = max(ges_qg(j,i,k), qg_min)
+
+                     end if         ! cvpqx
+! End of power-transformed q option  =====================================================================!
+                   end if
+! --- direct reflectivity DA ---
                 end do
              end do
           end do

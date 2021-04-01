@@ -12,6 +12,7 @@ module gsi_rfv3io_mod
 !   2017-10-10  wu      - setup A grid and interpolation coeff in generate_anl_grid
 !   2018-02-22  wu      - add subroutines for read/write fv3_ncdf
 !   2019        ting    - modifications for use for ensemble IO and cold start files 
+!   2019-03-13  CAPS(C. Tong) - Port direct radar DA capabilities.
 ! subroutines included:
 !   sub gsi_rfv3io_get_grid_specs
 !   sub read_fv3_files 
@@ -75,11 +76,14 @@ module gsi_rfv3io_mod
   public :: gsi_fv3ncdf2d_read_v1
 
   public :: mype_u,mype_v,mype_t,mype_q,mype_p,mype_oz,mype_ql
+  public :: mype_qi,mype_qr,mype_qs,mype_qg,mype_qnr,mype_w
   public :: k_slmsk,k_tsea,k_vfrac,k_vtype,k_stype,k_zorl,k_smc,k_stc
   public :: k_snwdph,k_f10m,mype_2d,n2d,k_orog,k_psfc
   public :: ijns,ijns2d,displss,displss2d,ijnz,displsz_g
 
   integer(i_kind) mype_u,mype_v,mype_t,mype_q,mype_p,mype_delz,mype_oz,mype_ql
+  integer(i_kind) mype_qi,mype_qr,mype_qs,mype_qg,mype_qnr,mype_w
+
   integer(i_kind) k_slmsk,k_tsea,k_vfrac,k_vtype,k_stype,k_zorl,k_smc,k_stc
   integer(i_kind) k_snwdph,k_f10m,mype_2d,n2d,k_orog,k_psfc
   parameter(                   &  
@@ -625,6 +629,11 @@ subroutine read_fv3_netcdf_guess(fv3filenamegin)
     use gsi_bundlemod, only: gsi_bundlegetpointer
     use mpeu_util, only: die
     use guess_grids, only: ntguessig
+    use constants, only: zero, one_tenth
+    use mpimod, only: mype
+    use directDA_radaruse_mod, only: l_use_cvpqx, l_use_cvpqx_pval
+    use directDA_radaruse_mod, only: l_use_dbz_directDA
+    use directDA_radaruse_mod, only: l_cvpnr, cvpnr_pval
 
     implicit none
 
@@ -640,28 +649,59 @@ subroutine read_fv3_netcdf_guess(fv3filenamegin)
 !   real(r_kind),dimension(:,:,:),pointer::ges_ql=>NULL()
     real(r_kind),dimension(:,:,:),pointer::ges_oz=>NULL()
     real(r_kind),dimension(:,:,:),pointer::ges_tv=>NULL()
-            
+
+    real(r_kind),dimension(:,:,:),pointer::ges_ql=>NULL()
+    real(r_kind),dimension(:,:,:),pointer::ges_qi=>NULL()
+    real(r_kind),dimension(:,:,:),pointer::ges_qr=>NULL()
+    real(r_kind),dimension(:,:,:),pointer::ges_qs=>NULL()
+    real(r_kind),dimension(:,:,:),pointer::ges_qg=>NULL()
+    real(r_kind),dimension(:,:,:),pointer::ges_qnr=>NULL()
+    real(r_kind),dimension(:,:,:),pointer::ges_w=>NULL()
+
       character(len=:),allocatable :: dynvars   !='fv3_dynvars'
       character(len=:),allocatable :: tracers   !='fv3_tracer'
-   
+
+    real(r_kind) :: qr_min, qs_min, qg_min
+    real(r_kind) :: qr_thrshd, qs_thrshd, qg_thrshd
 
 
      dynvars= fv3filenamegin%dynvars
      tracers= fv3filenamegin%tracers
 
-    if(npe< 8) then
-       call die('read_fv3_netcdf_guess','not enough PEs to read in fv3 fields' )
-    endif
-    mype_u=0           
-    mype_v=1
-    mype_t=2
-    mype_p=3
-    mype_q=4
-    mype_ql=5
-    mype_oz=6
-    mype_2d=7 
-    mype_delz=8
-      
+    if (l_use_dbz_directDA) then ! direct reflectivity DA
+       if(npe< 15) then
+          call die('read_fv3_netcdf_guess','not enough PEs to read in fv3 fields for direct reflectivity DA' )
+       endif
+       mype_u=0
+       mype_v=1
+       mype_t=2
+       mype_p=3
+       mype_q=4
+       mype_ql=5
+       mype_qi=6
+       mype_qr=7
+       mype_qs=8
+       mype_qg=9
+       mype_oz=10
+       mype_2d=11
+       mype_qnr=12
+       mype_w=13
+       mype_delz=14
+    else
+       if(npe< 8) then
+          call die('read_fv3_netcdf_guess','not enough PEs to read in fv3 fields' )
+       endif
+       mype_u=0
+       mype_v=1
+       mype_t=2
+       mype_p=3
+       mype_q=4
+       mype_ql=5
+       mype_oz=6
+       mype_2d=7
+       mype_delz=8
+    end if
+
     allocate(ijns(npe),ijns2d(npe),ijnz(npe) )
     allocate(displss(npe),displss2d(npe),displsz_g(npe) )
 
@@ -692,6 +732,16 @@ subroutine read_fv3_netcdf_guess(fv3filenamegin)
     call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'q'  ,ges_q ,istatus );ier=ier+istatus
 !   call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'ql'  ,ges_ql ,istatus );ier=ier+istatus
     call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'oz'  ,ges_oz ,istatus );ier=ier+istatus
+    if (l_use_dbz_directDA) then
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'ql' ,ges_ql ,istatus );ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qi' ,ges_qi ,istatus );ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qr' ,ges_qr ,istatus );ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qs' ,ges_qs ,istatus );ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qg' ,ges_qg ,istatus );ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnr',ges_qnr ,istatus );ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'w' , ges_w ,istatus );ier=ier+istatus
+    end if
+
     if (ier/=0) call die(trim(myname),'cannot get pointers for fv3 met-fields, ier =',ier)
      
     if( fv3sar_bg_opt == 0) then 
@@ -734,14 +784,108 @@ subroutine read_fv3_netcdf_guess(fv3filenamegin)
       call gsi_fv3ncdf_read_v1(tracers,'o3mr','O3MR',ges_oz,mype_oz)
     endif
 
+    if (l_use_dbz_directDA ) then
+      if( fv3sar_bg_opt == 0) then
+        call gsi_fv3ncdf_read(dynvars,'W','w',ges_w,mype_w)
+        call gsi_fv3ncdf_read(tracers,'LIQ_WAT','liq_wat',ges_ql,mype_ql)
+        call gsi_fv3ncdf_read(tracers,'ICE_WAT','ice_wat',ges_qi,mype_qi)
+        call gsi_fv3ncdf_read(tracers,'RAINWAT','rainwat',ges_qr,mype_qr)
+        call gsi_fv3ncdf_read(tracers,'SNOWWAT','snowwat',ges_qs,mype_qs)
+        call gsi_fv3ncdf_read(tracers,'GRAUPEL','graupel',ges_qg,mype_qg)
+        call gsi_fv3ncdf_read(tracers,'RAIN_NC','rain_nc',ges_qnr,mype_qnr)
+      else
+         write(6,*) "FV3 IO READ for 'fv3sar_bg_opt == 0 are only available for now in direct reflectivity DA"
+         stop
+      end if
+
 !!  tsen2tv  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    do k=1,nsig
-       do j=1,lon2
-          do i=1,lat2
-             ges_tv(i,j,k)=ges_tsen(i,j,k,it)*(one+fv*ges_q(i,j,k))
+      do k=1,nsig
+        do i=1,lon2
+          do j=1,lat2
+             ges_tv(j,i,k)=ges_tsen(j,i,k,it)*(one+fv*ges_q(j,i,k))
+!            Apply power transform if option is ON 
+             if (l_use_cvpqx) then
+                if ( l_use_cvpqx_pval .eq. 0. ) then ! CVlogq
+                   if (ges_tsen(j,i,k,it) .gt. 274.15) then
+                      qr_min=2.9E-6_r_kind
+                      qr_thrshd=qr_min * one_tenth
+                      qs_min=0.1E-9_r_kind
+                      qs_thrshd=qs_min
+                      qg_min=3.1E-7_r_kind
+                      qg_thrshd=qg_min * one_tenth
+                   else if (ges_tsen(j,i,k,it) .le. 274.15 .and. ges_tsen(j,i,k,it) .ge. 272.15) then
+                      qr_min=2.0E-6_r_kind
+                      qr_thrshd=qr_min * one_tenth
+                      qs_min=1.3E-7_r_kind
+                      qs_thrshd=qs_min * one_tenth
+                      qg_min=3.1E-7_r_kind
+                      qg_thrshd=qg_min * one_tenth
+                   else if (ges_tsen(j,i,k,it) .lt. 272.15) then
+                      qr_min=0.1E-9_r_kind
+                      qr_thrshd=qr_min
+                      qs_min=6.3E-6_r_kind
+                      qs_thrshd=qs_min * one_tenth
+                      qg_min=3.1E-7_r_kind
+                      qg_thrshd=qg_min * one_tenth
+                   end if
+
+                   if ( ges_qr(j,i,k) .le. qr_thrshd )  ges_qr(j,i,k) = qr_min
+                   if ( ges_qs(j,i,k) .le. qs_thrshd )  ges_qs(j,i,k) = qs_min
+                   if ( ges_qg(j,i,k) .le. qg_thrshd )  ges_qg(j,i,k) = qg_min
+
+!                  convert hydrometer variables (qr,qs and qg) to log
+                   if(mype==0 .AND. i==3 .AND. j==3 .AND. k==3)then
+                       write(6,*)'read_fv3_netcdf_guess: ',     &
+                           ' reset zero of qr/qs/qg to specified values (~0dbz)', &
+                           'before log transformation. (for dbz assimilation)'
+                       write(6,*)'read_fv3_netcdf_guess: convert qr/qs/qg to log.'
+                   end if
+                   ges_qr(j,i,k) = log(ges_qr(j,i,k))
+                   ges_qs(j,i,k) = log(ges_qs(j,i,k))
+                   ges_qg(j,i,k) = log(ges_qg(j,i,k))
+
+                else if ( l_use_cvpqx_pval .gt. 0. ) then   ! CVpq
+!                  convert cloud hydrometer variables (qr,qs and qg) to log
+                   if(mype==0 .AND. i==3 .AND. j==3 .AND. k==3)then
+                       write(6,*)'read_fv3_netcdf_guess: convert qr/qs/qg with power transform .'
+                   end if
+                   !RONG KONG modified below to tranform the ges_qr in
+                   !logq space (Gang's version) to q space (arps version)
+                   !so that we don't need to make change to the origial
+                   !background field....
+                   ges_qr(j,i,k)=((max(ges_qr(j,i,k),1.0E-6_r_kind))**l_use_cvpqx_pval-1)/l_use_cvpqx_pval
+                   ges_qs(j,i,k)=((max(ges_qs(j,i,k),1.0E-6_r_kind))**l_use_cvpqx_pval-1)/l_use_cvpqx_pval
+                   ges_qg(j,i,k)=((max(ges_qg(j,i,k),1.0E-6_r_kind))**l_use_cvpqx_pval-1)/l_use_cvpqx_pval
+                end if
+             else ! CVq
+                qr_min=zero
+                qs_min=zero
+                qg_min=zero
+                if (mype==0 .AND. i==3 .AND. j==3 .AND. k==3) then
+                    write(6,*)'read_fv3_netcdf_guess: only reset (qr/qs/qg) to 0.0 for negative analysis value. (regular qx)'
+                end if
+                ges_qr(j,i,k) = max(ges_qr(j,i,k), qr_min)
+                ges_qs(j,i,k) = max(ges_qs(j,i,k), qs_min)
+                ges_qg(j,i,k) = max(ges_qg(j,i,k), qg_min)
+             end if
+
+!            Treatment on qnr ; power transform
+             if (l_cvpnr) then
+                ges_qnr(j,i,k)=((max(ges_qnr(j,i,k),1.0E-2_r_kind)**cvpnr_pval)-1)/cvpnr_pval
+             endif
+          enddo
+        enddo
+      enddo
+    else ! in the case of not using l_use_dbz_directDA (ORG)
+!!  tsen2tv  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+       do k=1,nsig
+          do j=1,lon2
+             do i=1,lat2
+                ges_tv(i,j,k)=ges_tsen(i,j,k,it)*(one+fv*ges_q(i,j,k))
+             enddo
           enddo
        enddo
-    enddo
+    end if
 
     call gsi_fv3ncdf2d_read(fv3filenamegin,it,ges_z)
 
@@ -1564,6 +1708,8 @@ subroutine wrfv3_netcdf(fv3filenamegin)
 ! abstract:  write FV3 analysis  in netcdf format
 !
 ! program history log:
+!   2019-04-18  CAPS(C. Tong) - import direct reflectivity DA capabilities
+!   2019-11-22  CAPS(C. Tong) - modify "add_saved" to properly output analyses
 ! 2021-01-05  x.zhang/lei  - add code for updating delz analysis in regional da
 !
 !   input argument list:
@@ -1585,6 +1731,16 @@ subroutine wrfv3_netcdf(fv3filenamegin)
     use gridmod, only: lat2,lon2,nsig
     use guess_grids, only:geom_hgti,geom_hgti_bg
 
+    use gridmod, only: pt_ll, aeta1_ll
+    use mpimod, only: mype
+    use constants, only: zero,one_tenth,one,r0_01
+    use constants, only: r10, r100, rd
+    use directDA_radaruse_mod, only: l_use_cvpqx, l_use_cvpqx_pval, cld_nt_updt
+    use directDA_radaruse_mod, only: l_use_dbz_directDA
+    use directDA_radaruse_mod, only: init_mm_qnr
+    use directDA_radaruse_mod, only: l_cvpnr, cvpnr_pval
+
+
     implicit none
     type (type_fv3regfilenameg),intent(in) :: fv3filenamegin
 
@@ -1602,6 +1758,25 @@ subroutine wrfv3_netcdf(fv3filenamegin)
     real(r_kind),allocatable,dimension(:,:,:)::ges_delzinc
     integer(i_kind) k
 
+    real(r_kind),pointer,dimension(:,:,:):: ges_ql  =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_qi  =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_qr  =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_qs  =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_qg  =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_qnr =>NULL()
+    real(r_kind),pointer,dimension(:,:,:):: ges_w   =>NULL()
+
+    integer(i_kind) i,j
+! variables for log q conversion
+    real(r_kind) :: qr_min, qs_min, qg_min
+    real(r_kind) :: qr_thrshd, qs_thrshd, qg_thrshd
+    real(r_kind) :: qr_tmp, qs_tmp, qg_tmp
+    real(r_kind) :: qnr_tmp
+! temporary arrays for dbz-related variables
+    real(r_kind) :: P1D,T1D,Q1D,RHO,QR1D
+    real(r_kind),parameter:: D608=0.608_r_kind
+    real(r_kind),dimension(lat2,lon2,nsig):: tmparr_qr, tmparr_qs, tmparr_qg, tmparr_qnr
+
     dynvars=fv3filenamegin%dynvars
     tracers=fv3filenamegin%tracers
 
@@ -1611,6 +1786,16 @@ subroutine wrfv3_netcdf(fv3filenamegin)
     call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'u' , ges_u ,istatus);ier=ier+istatus
     call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'v' , ges_v ,istatus);ier=ier+istatus
     call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'q'  ,ges_q ,istatus);ier=ier+istatus
+    if (l_use_dbz_directDA) then
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'ql' ,ges_ql ,istatus);ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qi' ,ges_qi ,istatus);ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qr' ,ges_qr ,istatus);ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qs' ,ges_qs ,istatus);ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qg' ,ges_qg ,istatus);ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'qnr',ges_qnr,istatus);ier=ier+istatus
+       call GSI_BundleGetPointer ( GSI_MetGuess_Bundle(it), 'w' , ges_w ,istatus);ier=ier+istatus
+    end if
+
     if (ier/=0) call die('get ges','cannot get pointers for fv3 met-fields, ier =',ier)
 
     add_saved=.true.
@@ -1637,6 +1822,163 @@ subroutine wrfv3_netcdf(fv3filenamegin)
        call gsi_fv3ncdf_writeps_v1(dynvars,'ps',ges_ps,mype_p,add_saved)
     
     endif
+
+! additional I/O for direct reflectivity DA capabilities
+    if (l_use_dbz_directDA) then
+! Initialized temp arrays with ges. Will be recalculated later if log(q) is used
+       tmparr_qr =ges_qr
+       tmparr_qs =ges_qs
+       tmparr_qg =ges_qg
+       tmparr_qnr=ges_qnr
+
+       do k=1,nsig
+         do i=1,lon2
+           do j=1,lat2
+
+!             initialize hydrometeors as zero
+              qr_tmp=zero
+              qs_tmp=zero
+              qg_tmp=zero
+
+              if ( l_use_cvpqx ) then
+                 if ( l_use_cvpqx_pval .eq. 0. ) then ! CVlogq
+
+                    if (ges_tsen(j,i,k,it) .gt. 274.15) then
+                       qr_min=2.9E-6_r_kind
+                       qr_thrshd=qr_min * one_tenth
+                       qs_min=0.1E-9_r_kind
+                       qs_thrshd=qs_min
+                       qg_min=3.1E-7_r_kind
+                       qg_thrshd=qg_min * one_tenth
+                    else if (ges_tsen(j,i,k,it) .le. 274.15 .and. ges_tsen(j,i,k,it) .ge. 272.15) then
+                       qr_min=2.0E-6_r_kind
+                       qr_thrshd=qr_min * one_tenth
+                       qs_min=1.3E-7_r_kind
+                       qs_thrshd=qs_min * one_tenth
+                       qg_min=3.1E-7_r_kind
+                       qg_thrshd=qg_min * one_tenth
+                    else if (ges_tsen(j,i,k,it) .lt. 272.15) then
+                       qr_min=0.1E-9_r_kind
+                       qr_thrshd=qr_min
+                       qs_min=6.3E-6_r_kind
+                       qs_thrshd=qs_min * one_tenth
+                       qg_min=3.1E-7_r_kind
+                       qg_thrshd=qg_min * one_tenth
+                    end if
+
+!                   convert log(qr/qs/qg) back to qr/qs/qg
+                    if (mype==0 .AND. i==3 .AND. j==3 .AND. k==3) then
+                       write(6,*)'wrfv3_netcdf: convert log(qr/qs/qg) back to qr/qs/qg.'
+                       write(6,*)'wrfv3_netcdf: then reset (qr/qs/qg) to 0.0 for some cases.'
+                    end if
+
+                    qr_tmp=exp(ges_qr(j,i,k))
+                    qs_tmp=exp(ges_qs(j,i,k))
+                    qg_tmp=exp(ges_qg(j,i,k))
+
+!                   if no update or very tiny value of qr/qs/qg, re-set/clear it
+!                   off to zero
+                    if ( abs(qr_tmp - qr_min) .lt. (qr_min*r0_01) ) then
+                       qr_tmp=zero
+                    else if (qr_tmp .lt. qr_thrshd) then
+                       qr_tmp=zero
+                    end if
+
+                    if ( abs(qs_tmp - qs_min) .lt. (qs_min*r0_01) ) then
+                       qs_tmp=zero
+                    else if (qs_tmp .lt. qs_thrshd) then
+                       qs_tmp=zero
+                    end if
+
+                    if ( abs(qg_tmp - qg_min) .lt. (qg_min*r0_01) ) then
+                       qg_tmp=zero
+                    else if (qg_tmp .lt. qg_thrshd) then
+                       qg_tmp=zero
+                    end if
+
+                 else if ( l_use_cvpqx_pval .gt. 0. ) then   ! CVpq
+!                   convert power transfromed (qr/qs/qg) back to qr/qs/qg
+                    if (mype==0 .AND. i==3 .AND. j==3 .AND. k==3) then
+                       write(6,*)'wrfv3_netcdf: convert power transformed (qr/qs/qg) back to qr/qs/qg.'
+                       write(6,*)'wrfv3_netcdf: then reset (qr/qs/qg) to 0.0 for some cases.'
+                    end if
+
+                    qr_tmp=max((l_use_cvpqx_pval*ges_qr(j,i,k)+1)**(1/l_use_cvpqx_pval)-1.0E-6_r_kind,0.0)
+                    qs_tmp=max((l_use_cvpqx_pval*ges_qs(j,i,k)+1)**(1/l_use_cvpqx_pval)-1.0E-6_r_kind,0.0)
+                    qg_tmp=max((l_use_cvpqx_pval*ges_qg(j,i,k)+1)**(1/l_use_cvpqx_pval)-1.0E-6_r_kind,0.0)
+
+                    !Rong Kong add a upper limit to hydrometeors to disable
+                    !overshooting
+                    qr_tmp=min(qr_tmp,1E-2_r_kind)
+                    qs_tmp=min(qs_tmp,1.0E-2_r_kind)
+                    qg_tmp=min(qg_tmp,2E-2_r_kind)
+                 end if
+
+              else   ! For CVq
+                 qr_min=zero
+                 qs_min=zero
+                 qg_min=zero
+
+                 if (mype==0 .AND. i==3 .AND. j==3 .AND. k==3) then
+                     write(6,*)'wrfv3_netcdf: only reset (qr/qs/qg) to 0.0 for negative analysis value. (regular qx)'
+                 end if
+                 qr_tmp=ges_qr(j,i,k)-1.0E-8_r_kind
+                 qs_tmp=ges_qs(j,i,k)-1.0E-8_r_kind
+                 qg_tmp=ges_qg(j,i,k)-1.0E-8_r_kind
+
+
+                 qr_tmp=max(qr_tmp,qr_min)
+                 qs_tmp=max(qs_tmp,qs_min)
+                 qg_tmp=max(qg_tmp,qg_min)
+
+              end if         ! cvpqx
+
+              tmparr_qr(j,i,k)=qr_tmp
+              tmparr_qs(j,i,k)=qs_tmp
+              tmparr_qg(j,i,k)=qg_tmp
+
+!             =========================================================================
+!             !
+!             re-initialisation of QNRAIN with analyzed qr and N0r(which is single-moment parameter)
+!             equation is used in subroutine init_MM of initlib3d.f90 in arps package
+              qnr_tmp = zero
+              if ( cld_nt_updt .eq. 2 ) then
+                 T1D=ges_tsen(j,i,k,it)                                 ! sensible temperature (K)
+                 P1D=r100*(aeta1_ll(k)*(r10*ges_ps(j,i)-pt_ll)+pt_ll)   ! pressure hPa --> Pa
+                 Q1D=ges_q(j,i,k)/(one-ges_q(j,i,k))                    ! mixing ratio 
+                 RHO=P1D/(rd*T1D*(one+D608*Q1D))                        ! air density in kg m^-3
+                 QR1D=qr_tmp
+                 CALL init_mm_qnr(RHO,QR1D,qnr_tmp)
+                 qnr_tmp = max(qnr_tmp, zero)
+
+              else
+                 if (l_cvpnr) then ! power transform
+                    qnr_tmp=max((cvpnr_pval*ges_qnr(j,i,k)+1)**(1/cvpnr_pval)-1.0E-2_r_kind,0.0)
+                 else
+                    qnr_tmp=ges_qnr(j,i,k)
+                 end if
+
+              end if
+              tmparr_qnr(j,i,k)=qnr_tmp
+
+           end do
+         end do
+       end do
+!   write out
+      if( fv3sar_bg_opt == 0) then
+       add_saved=.true.
+       call gsi_fv3ncdf_write(dynvars,'W',ges_w,mype_w,add_saved)
+       call gsi_fv3ncdf_write(tracers,'liq_wat',ges_ql,mype_ql,add_saved)
+       call gsi_fv3ncdf_write(tracers,'ice_wat',ges_qi,mype_qi,add_saved)
+       call gsi_fv3ncdf_write(tracers,'rainwat',tmparr_qr,mype_qr,add_saved)
+       call gsi_fv3ncdf_write(tracers,'snowwat',tmparr_qs,mype_qs,add_saved)
+       call gsi_fv3ncdf_write(tracers,'graupel',tmparr_qg,mype_qg,add_saved)
+       call gsi_fv3ncdf_write(tracers,'rain_nc',tmparr_qnr,mype_qnr,add_saved)
+      else
+         write(6,*) "FV3 IO Write for 'fv3sar_bg_opt == 0 are only available for now in direct relfectivity DA"
+         stop
+      end if
+    end if
     
 end subroutine wrfv3_netcdf
 
