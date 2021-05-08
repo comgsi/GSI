@@ -3829,7 +3829,7 @@ subroutine read_radar_l2rw(ndata,nodata,lunout,obstype,sis,nobs,hgtl_full)
      call gettable(tbname,666,ntot,radar_count,rtable)
      do i=1,radar_count
        read(rtable(i),*) rsite(i),ruse(i)
-       write(*,'(A10,X,A4,X,I)'),"Radar Sites: ",rsite(i),ruse(i)
+       write(*,'(A14,X,A4,X,I3)'),"Radar Sites: ",rsite(i),ruse(i)
      end do
   end if
   rad_per_meter= one/rearth
