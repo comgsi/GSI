@@ -51,7 +51,7 @@ subroutine reorg_metar_cloud(cdata,nreal,ndata,cdata_all,maxobs,ngrid)
 
   implicit none
 
-! Dec_are passed variables
+! Declare passed variables
   integer(i_kind)                       ,intent(in) :: nreal   
   integer(i_kind)                       ,intent(in) :: ndata
   integer(i_kind)                       ,intent(in) :: maxobs

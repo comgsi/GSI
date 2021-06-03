@@ -226,6 +226,7 @@ subroutine setupdbz(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,radardbz_d
      nreal=27
      if (lobsdiagsave) nreal=nreal+4*miter+1
      allocate(cdiagbuf(nobs),rdiagbuf(nreal,nobs))
+     rdiagbuf=0.0_r_single
   end if
   mm1=mype+1
   scale=one
