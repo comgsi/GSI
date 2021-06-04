@@ -89,7 +89,7 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
 !
 ! Declare local variables
 !
-  logical :: outside, iuse
+  logical :: outside, iuse, new_viirsTab
   
   character (len= 8) :: subset
   character (len=10) :: date
@@ -145,6 +145,11 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
   character (len= 9) :: vaodchstr  = 'CHWL AOTH'
   character (len=69) :: vaodgstr = &
       'SAID CLATH CLONH YEAR MNTH DAYS HOUR MINU SOZA SOLAZI RSST VAOTQ QPLR'
+
+  ! new viirs table
+  character (len=69) :: vaodgstr1 = &
+      'SAID CLATH CLONH YEAR MNTH DAYS HOUR MINU SOZA SOLAZI RSST AOTQ RETRQ'
+
   integer(i_kind), parameter :: mxib  = 20
   integer(i_kind) :: nib
   integer(i_kind) :: ibit(mxib)
@@ -375,6 +380,7 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
      call closbf(lunin)
      close(lunin)
   else if ( obstype == 'viirs_aod' ) then
+     new_viirsTab=.false.     
      open(lunin,file=trim(infile),form='unformatted')
      call openbf(lunin,'IN',lunin)
      call datelen(10)
@@ -402,6 +408,7 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
 !          set qcall_limit
            if (idate >= 2018021300) then
               qcall_limit = aod_qa_limit + r0_01 ! for the viirs data after 2018/02/13
+              new_viirsTab=.true.
            else
               qcall_limit = aod_qa_limit - r0_01
            end if
@@ -421,10 +428,15 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
               endif
 
               !    extract header information
-              call ufbint(lunin,hdrvaodg,13,1,iret,vaodgstr)
+              if (.not. new_viirsTab) then
+                call ufbint(lunin,hdrvaodg,13,1,iret,vaodgstr)
+              else
+                call ufbint(lunin,hdrvaodg,13,1,iret,vaodgstr1)
+              endif
               rsat = hdrvaodg(1); ksatid=rsat
 
-              if ( jsatid == 'NPP' .or. jsatid == 'npp' ) kidsat = 225
+              if ( jsatid == 'NPP' .or. jsatid == 'npp' ) kidsat = 224
+              if ( jsatid == 'N20' .or. jsatid == 'n20' ) kidsat = 225
 
               if ( ksatid /= kidsat  ) cycle read_viirs
 
@@ -440,7 +452,7 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
 
               if(regional)then
                  call tll2xy(dlon_earth,dlat_earth,dlon,dlat,outside)
-                 if(outside) cycle read_viirs
+                 !if(outside) cycle read_viirs
               else
                  dlat = dlat_earth
                  dlon = dlon_earth
@@ -451,15 +463,30 @@ subroutine read_aerosol(nread,ndata,nodata,jsatid,infile,gstime,lunout, &
               solzen  = hdrvaodg(9)
               azimuth = hdrvaodg(10)
 
-              smask = zero                          ! over water
-              if (nint(hdrvaodg(11)) > 0) then      ! over land
-                 smask = one                        ! dark surface
-                 call upftbv(lunin,"VAOTQ",hdrvaodg(12),mxib,ibit,nib)
-                 if (nib > 0) then
+              !write(*,*) " read_aero_aolzen ",solzen, azimuth   !AJK commented
+              if (.not. new_viirsTab) then
+                ! SAID CLATH CLONH YEAR MNTH DAYS HOUR MINU SOZA SOLAZI RSST
+                ! VAOTQ QPLR
+                smask = zero                          ! over water
+                if (nint(hdrvaodg(11)) > 0) then      ! over land: RSST
+                  smask = one                         ! dark surface
+                  call upftbv(lunin,"VAOTQ",hdrvaodg(12),mxib,ibit,nib)
+                  if (nib > 0) then
                     if(any(ibit(1:nib) == 6)) then
                        smask = two                  !  bright surface
                     endif
-                 endif
+                  endif
+                endif
+
+              else
+              ! SAID CLATH CLONH YEAR MNTH DAYS HOUR MINU SOZA SOLAZI RSST AOTQ
+              ! RETRQ
+              !  write(*,*) " read_aero_AOTQ ",solzen, azimuth !AJK commented
+                call upftbv(lunin,"AOTQ",hdrvaodg(12),mxib,ibit,nib)
+               ! write(*,*) " read_aero_nib ",nib,mxib,hdrvaodg(12),ibit !AJK
+               ! commented
+                !write(*,'(a20,2i10,12i4)') 'nib ',nib
+
               endif
 
               qcall   = hdrvaodg(13)

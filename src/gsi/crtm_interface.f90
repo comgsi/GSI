@@ -1872,6 +1872,8 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
                            aeroges_itsig(ixp,iy ,k)*w10+ &
                            aeroges_itsig(ix ,iyp,k)*w01+ &
                            aeroges_itsig(ixp,iyp,k)*w11)
+              !write(*,*),'AJK aerosol_names(ii) ',aerosol_names(ii)
+              !write(*,*),'AJK aero(k,ii) ',aero(k,ii)
             end do
        enddo
     else
@@ -1917,6 +1919,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
                  gesqsat(ix ,iyp,k,itsigp)*w01+ &
                  gesqsat(ixp,iyp,k,itsigp)*w11)*dtsigp
         rh(k) = q(k)/qs(k)
+        !write(*,*)'AJK rh(k)=q(k)/qs(k),q(k),qs(k) ',rh(k),q(k),qs(k)
     end do
   endif
 
@@ -1947,6 +1950,7 @@ subroutine call_crtm(obstype,obstime,data_s,nchanl,nreal,ich, &
 !       Convert mixing-ratio to concentration
         ugkg_kgm2(k)=1.0e-9_r_kind*(prsi(k)-prsi(k+1))*r1000/grav
         aero(k,:)=aero(k,:)*ugkg_kgm2(k)
+        !write(*,*)'AJK aero(k,:)',aero(k,:)
      enddo
   endif
 

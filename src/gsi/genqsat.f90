@@ -78,6 +78,16 @@ subroutine genqsat(qsat,tsen,prsl,lat2,lon2,nsig,ice,iderivative)
 ! Declare local parameters
   real(r_kind),parameter:: r015 = 0.15_r_kind
 
+
+!  do j=1,lon2
+!     do i=1,lat2
+!      do k=1,nsig
+!       write(*,*)'AJK tsen,prsl,i,j,k,ice,iderivative',tsen(i,j,k),prsl(i,j,k),i,j,k,ice,iderivative
+!      end do
+!     end do
+!  end do
+
+
   onep3 = 1.e3_r_kind
 
   if(iderivative > 0)then
