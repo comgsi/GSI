@@ -855,11 +855,11 @@ endif
 
      if (mype==0) write(6,*)myname_,':initial and load GFDL saturation water vapor pressure tables'
   
-     allocate(table (length))
-     allocate(table2(length))
-     allocate(tablew(length))
-     allocate(des2  (length))
-     allocate(desw  (length))
+     if(.not.allocated(table)) allocate(table (length))
+     if(.not.allocated(table2)) allocate(table2(length))
+     if(.not.allocated(tablew)) allocate(tablew(length))
+     if(.not.allocated(des2)) allocate(des2  (length))
+     if(.not.allocated(desw)) allocate(desw  (length))
 
      call qs_table (length)
      call qs_table2(length)

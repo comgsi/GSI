@@ -411,10 +411,10 @@ subroutine setupaod(obsLL,odiagLL,lunin,mype,nchanl,nreal,nobs,&
         enddo 
 
         do i = 1, nchanl
-           total_aod(i)=1.2345E00
+           !total_aod(i)=1.2345E00
            aod(i) = aod_obs(i) - total_aod(i)
-           write(*,*)'anton aod_obs(i) ',aod_obs(i)
-           write(*,*)'anton total_aod ',total_aod
+           !write(*,*)'anton aod_obs(i) ',aod_obs(i)
+           !write(*,*)'anton total_aod ',total_aod
 
 
            error0(i)     = tnoise(i)
