@@ -79,6 +79,9 @@ subroutine setupspd(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diags
 !                              error (DOE) calculation to the namelist
 !                              level; they are now loaded by
 !                              aircraftinfo.  
+!   2020-11-xx  pondeca/morris - added observation provider/subprovider information in
+!                                diagonostic file, which is used in offline
+!                                observation quality control program for 3D-RTMA.
 !
 !   input argument list:
 !     lunin    - unit from which to read observations
@@ -133,6 +136,7 @@ subroutine setupspd(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diags
   use gsi_metguess_mod, only : gsi_metguess_get,gsi_metguess_bundle
   use m_dtime, only: dtime_setup, dtime_check
   use sparsearr, only: sparr2, new, size, writearray, fullarray
+  use rapidrefresh_cldsurf_mod, only:l_rtma3d
 
   ! The following variables are the coefficients that describe the
   ! linear regression fits that are used to define the dynamic
@@ -280,7 +284,10 @@ subroutine setupspd(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diags
      ioff0=21
      nreal=ioff0
      if (lobsdiagsave) nreal=nreal+4*miter+1
-     if (twodvar_regional) then; nreal=nreal+2; allocate(cprvstg(nobs),csprvstg(nobs)); endif
+     if (twodvar_regional .or. l_rtma3d) then
+       nreal=nreal+2                          ! account for idomsfc,izz
+       allocate(cprvstg(nobs),csprvstg(nobs)) ! obs provider info
+     endif
      if (save_jacobian) then
        nnz    = 4                   ! number of non-zero elements in dH(x)/dx profile
        nind   = 2
@@ -684,13 +691,13 @@ subroutine setupspd(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diags
      if(binary_diag .and. ii>0)then
         write(7)'spd',nchar,nreal,ii,mype,ioff0
         write(7)cdiagbuf(1:ii),rdiagbuf(:,1:ii)
-        deallocate(cdiagbuf,rdiagbuf)
 
-        if (twodvar_regional) then
+        if (twodvar_regional .or. l_rtma3d) then
            write(7)cprvstg(1:ii),csprvstg(1:ii)
            deallocate(cprvstg,csprvstg)
         endif
      end if
+     deallocate(cdiagbuf,rdiagbuf)
   end if
 
 ! End of routine
@@ -915,7 +922,7 @@ subroutine setupspd(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diags
            enddo
         endif
 
-        if (twodvar_regional) then
+        if (twodvar_regional .or. l_rtma3d) then
            ioff = ioff + 1
            rdiagbuf(ioff,ii) = data(idomsfc,i) ! dominate surface type
            ioff = ioff + 1
@@ -980,7 +987,7 @@ subroutine setupspd(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diags
               call nc_diag_data2d("ObsDiagSave_obssen",   odiag%obssen   )             
            endif
    
-           if (twodvar_regional) then
+           if (twodvar_regional .or. l_rtma3d) then
               call nc_diag_metadata("Dominant_Sfc_Type", data(idomsfc,i)              )
               call nc_diag_metadata("Model_Terrain",     data(izz,i)                  )
               r_prvstg            = data(iprvd,i)

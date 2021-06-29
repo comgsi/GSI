@@ -81,6 +81,9 @@ subroutine setupps(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsa
 !   2017-03-31  Hu      -  addd option l_closeobs to use closest obs to analysis
 !                                     time in analysis
 !   2019-09-20  Su      -  remove current VQC part and add subroutine call on VQC and add new VQC option
+!   2020-11-xx  pondeca/morris - added observation provider/subprovider information in
+!                                diagonostic file, which is used in offline
+!                                observation quality control program for 3D-RTMA.
 !
 !   input argument list:
 !     lunin    - unit from which to read observations
@@ -137,6 +140,7 @@ subroutine setupps(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsa
   use gsi_metguess_mod, only : gsi_metguess_get,gsi_metguess_bundle
   use sparsearr, only: sparr2, new, size, writearray, fullarray
   use rapidrefresh_cldsurf_mod, only: l_closeobs
+  use rapidrefresh_cldsurf_mod, only:l_rtma3d
 
   implicit none
 
@@ -301,7 +305,10 @@ subroutine setupps(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsa
      ioff0=20
      nreal=ioff0
      if (lobsdiagsave) nreal=nreal+4*miter+1
-     if (twodvar_regional) then; nreal=nreal+2; allocate(cprvstg(nobs),csprvstg(nobs)); endif
+     if (twodvar_regional .or. l_rtma3d) then
+       nreal=nreal+2                           !account for idomsfc,izz
+       allocate(cprvstg(nobs),csprvstg(nobs))  !obs provider info
+     endif
      if (save_jacobian) then
        nnz   = 1                   ! number of non-zero elements in dH(x)/dx profile
        nind   = 1
@@ -647,13 +654,13 @@ subroutine setupps(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsa
      if(binary_diag .and. ii>0)then
         write(7)' ps',nchar,nreal,ii,mype,ioff0
         write(7)cdiagbuf(1:ii),rdiagbuf(:,1:ii)
-        deallocate(cdiagbuf,rdiagbuf)
 
-        if (twodvar_regional) then
+        if (twodvar_regional .or. l_rtma3d) then
            write(7)cprvstg(1:ii),csprvstg(1:ii)
            deallocate(cprvstg,csprvstg)
         endif
      end if
+     deallocate(cdiagbuf,rdiagbuf)
   end if
   
 ! End of routine
@@ -836,7 +843,7 @@ subroutine setupps(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsa
            enddo
        endif
 
-        if (twodvar_regional) then
+        if (twodvar_regional .or. l_rtma3d) then
            ioff = ioff + 1
            rdiagbuf(ioff,ii) = data(idomsfc,i) ! dominate surface type
            ioff = ioff + 1
@@ -901,7 +908,7 @@ subroutine setupps(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsa
               call nc_diag_data2d("ObsDiagSave_obssen",   odiag%obssen   )             
           endif
    
-           if (twodvar_regional) then
+           if (twodvar_regional .or. l_rtma3d) then
               call nc_diag_metadata("Dominant_Sfc_Type", data(idomsfc,i)              )
               call nc_diag_metadata("Model_Terrain",     data(izz,i)                  )
               r_prvstg            = data(iprvd,i)
