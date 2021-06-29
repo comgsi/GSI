@@ -65,6 +65,7 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
   use converr, only: ptabl
   use rapidrefresh_cldsurf_mod, only: l_PBL_pseudo_SurfobsUV, pblH_ration,pps_press_incr
   use rapidrefresh_cldsurf_mod, only: l_closeobs, i_gsdqc
+  use rapidrefresh_cldsurf_mod, only: l_rtma3d
 
   use m_dtime, only: dtime_setup, dtime_check
 
@@ -216,6 +217,9 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
 !                              level; they are now loaded by
 !                              aircraftinfo.
 !   2020-05-04  wu   - no rotate_wind for fv3_regional
+!   2020-11-xx  pondeca/morris - added observation provider/subprovider information in
+!                                diagonostic file, which is used in offline
+!                                observation quality control program for 3D-RTMA.
 !
 ! REMARKS:
 !   language: f90
@@ -396,7 +400,10 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
      ioff0=25
      nreal=ioff0
      if (lobsdiagsave) nreal=nreal+7*miter+2
-     if (twodvar_regional) then; nreal=nreal+2; allocate(cprvstg(nobs),csprvstg(nobs)); endif
+     if (twodvar_regional .or. l_rtma3d) then
+       nreal=nreal+2                           ! account for idomsfc,izz
+       allocate(cprvstg(nobs),csprvstg(nobs))  ! obs provider info
+     endif
      if (save_jacobian) then
        nnz   = 2                   ! number of non-zero elements in dH(x)/dx profile
        nind   = 1
@@ -1150,6 +1157,8 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
                ratio_errors = zero
            endif
         endif
+     endif
+     if (twodvar_regional .or. l_rtma3d) then
         if (itype==288 .or. itype==295) then !Tyndall & Horel QC for mesonet winds /(WAF 2013, Vol. 28, pg. 285)
            if (spdob < one .and. (spdob-spdb) > five) then
                error = zero
@@ -1447,13 +1456,13 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
     if(binary_diag .and. ii>0)then
        write(7)' uv',nchar,nreal,ii,mype,ioff0
        write(7)cdiagbuf(1:ii),rdiagbuf(:,1:ii)
-       deallocate(cdiagbuf,rdiagbuf)
   
-       if (twodvar_regional) then
+       if (twodvar_regional .or. l_rtma3d) then
           write(7)cprvstg(1:ii),csprvstg(1:ii)
           deallocate(cprvstg,csprvstg)
        endif
     end if
+    deallocate(cdiagbuf,rdiagbuf)
   end if
 
 
@@ -1714,7 +1723,7 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
            enddo
         endif
 
-        if (twodvar_regional) then
+        if (twodvar_regional .or. l_rtma3d) then
            ioff = ioff + 1
            rdiagbuf(ioff,ii) = data(idomsfc,i) ! dominate surface type
            ioff = ioff + 1
@@ -1813,7 +1822,7 @@ subroutine setupw(obsLL,odiagLL,lunin,mype,bwork,awork,nele,nobs,is,conv_diagsav
               !++ call nc_diag_data2d("ObsDiagSave_obssen",   vdiag%obssen   )
            endif
 
-           if (twodvar_regional) then
+           if (twodvar_regional .or. l_rtma3d) then
               call nc_diag_metadata("Dominant_Sfc_Type", data(idomsfc,i)              )
               call nc_diag_metadata("Model_Terrain",     data(izz,i)                  )
               r_prvstg            = data(iprvd,i)

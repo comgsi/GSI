@@ -11,3 +11,8 @@ cmake_minimum_required(VERSION 2.6)
   set_target_properties( read_diag_rad.x PROPERTIES COMPILE_FLAGS ${UTIL_COM_Fortran_FLAGS} )
   target_link_libraries( read_diag_rad.x ${GSISHAREDLIB} ${GSILIB} ${GSISHAREDLIB} )
   add_dependencies(read_diag_rad.x ${GSILIB} )
+
+  add_executable(read_diag_conv_3drtma.x  read_diag_conv_3drtma.f90 )
+  set_target_properties( read_diag_conv_3drtma.x PROPERTIES COMPILE_FLAGS ${UTIL_COM_Fortran_FLAGS} )
+  target_link_libraries( read_diag_conv_3drtma.x ${GSISHAREDLIB} ${GSILIB} ${GSISHAREDLIB} )
+  add_dependencies(read_diag_conv_3drtma.x ${GSILIB} )
